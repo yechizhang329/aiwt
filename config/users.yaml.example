@@ -1,0 +1,16 @@
+credentials:
+  usernames:
+    admin:
+      email: admin@example.com
+      name: 管理员
+      password: "$2b$12$..."   # bcrypt hash — generate with: python3 scripts/add_user.py
+      role: admin
+    assistant_a:
+      email: assistant@example.com
+      name: 助理A
+      password: "$2b$12$..."
+      role: user
+
+# Cookie settings are managed via config.py / SCENE1_COOKIE_KEY env var.
+preauthorized:
+  emails: []
