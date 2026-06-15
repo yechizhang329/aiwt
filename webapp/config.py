@@ -23,10 +23,12 @@ COOKIE_EXPIRY_DAYS: int = 7
 
 # --- Slock integration ---
 DENTIST_HANDLE: str = "@DentistWang"
+NOTIFY_CHANNEL: str = "#wt-webapp"  # channel to ping DentistWang on new submissions
 SUBMISSION_TAG: str = "[Scene 1 case submission v1] [立即处理]"
 SUPPLEMENT_TAG: str = "[Scene 1 supplement v1] [立即处理]"
 COMPLETED_TAG: str = "[Scene 1 cowork completed v1]"
 SUFFICIENCY_TAG: str = "[Scene 1 sufficiency check v1]"
+RECEIVED_TAG: str = "[Scene 1 case received v1]"
 
 # --- Polling ---
 POLL_INTERVAL_SECONDS: int = 20

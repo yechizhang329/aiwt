@@ -1,18 +1,42 @@
-# Secrets & credentials
-config/users.yaml
-.streamlit/secrets.toml
-
-# Runtime data
-data/
-uploads/
-
-# Dev / test artifacts
-poll_once_manual.py
-poll_real0001.log
-*.log
-
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
+.venv/
+venv/
 .env
+
+# Runtime data
+backend/data/
+backend/uploads/
+backend/secure/
+webapp/data/
+webapp/uploads/
+webapp/config/users.yaml
+webapp/.streamlit/secrets.toml
+webapp/poll_once_manual.py
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Generated / local artifacts
+artifacts/
+attachments/
+notes/
+memory/
+.slock/
+runtime-sessions/
+
+# Model weights and large binary data
+*.pth
+*.pt
+*.onnx
+*.ckpt
+*.npy
+*.npz
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

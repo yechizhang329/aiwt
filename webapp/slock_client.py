@@ -25,6 +25,7 @@ SUBMISSION_TAG = config.SUBMISSION_TAG
 SUPPLEMENT_TAG = config.SUPPLEMENT_TAG
 COMPLETED_TAG = config.COMPLETED_TAG
 SUFFICIENCY_TAG = config.SUFFICIENCY_TAG
+RECEIVED_TAG = config.RECEIVED_TAG
 
 MAX_FILE_SIZE_BYTES = config.MAX_FILE_SIZE_BYTES
 MAX_ATTACHMENTS = config.MAX_ATTACHMENTS
@@ -66,21 +67,24 @@ def compress_image(file_path: str) -> str:
     return file_path
 
 
-def upload_attachment(file_path: str) -> str:
+def upload_attachment(file_path: str, channel: str = None) -> str:
     """Upload a file via slock, return attachment ID."""
-    rc, out, err = _run(["attachment", "upload", file_path])
+    target = channel or f"dm:{DENTIST_HANDLE}"
+    rc, out, err = _run(["attachment", "upload", "--path", file_path, "--channel", target])
     if rc != 0:
         raise RuntimeError(f"attachment upload failed for {file_path}: {err}")
     for line in out.splitlines():
         lower = line.lower()
-        if "attachment_id" in lower or (": " in line and len(line) < 80):
-            candidate = line.split(":")[-1].strip()
+        if "attachment id:" in lower or "attachment_id" in lower:
+            candidate = line.split(":", 1)[-1].strip()
             if candidate:
                 return candidate
-    # Fallback: last non-empty line
-    lines = [l for l in out.splitlines() if l.strip()]
-    if lines:
-        return lines[-1].strip()
+    # Fallback: last non-empty line that looks like a UUID
+    import re as _re
+    for line in reversed(out.splitlines()):
+        line = line.strip()
+        if _re.match(r"[0-9a-f-]{36}$", line):
+            return line
     raise ValueError(f"Cannot parse attachment ID from: {out!r}")
 
 
@@ -100,6 +104,22 @@ def _format_supplement(job_id: str, supplement_text: str) -> str:
         f"job_id: {job_id}\n"
         f"补充信息:\n{supplement_text}\n"
     )
+
+
+def _find_submission_msg_id(job_id: str) -> str:
+    """Read DM channel and find msg short ID for a submission by job_id."""
+    rc, out, _ = _run(["message", "read", "--channel", f"dm:{DENTIST_HANDLE}"])
+    if rc != 0:
+        return None
+    _HEADER_RE = re.compile(r"\[seq=\d+ msg=([0-9a-f-]{36})")
+    last_msg_id = None
+    for line in out.splitlines():
+        m = _HEADER_RE.search(line)
+        if m:
+            last_msg_id = m.group(1)
+        if f"job_id: {job_id}" in line and last_msg_id:
+            return last_msg_id.replace("-", "")[:8]
+    return None
 
 
 def submit_cowork(job_id: str, age: int, gender: str,
@@ -124,12 +144,36 @@ def submit_cowork(job_id: str, age: int, gender: str,
     body = _format_submission(job_id, age, gender, chief_complaint)
     args = ["message", "send", "--target", f"dm:{DENTIST_HANDLE}"]
     for att_id in attachment_ids:
-        args += ["--attach", att_id]
+        args += ["--attachment-id", att_id]
 
     rc, out, err = _run(args, stdin_text=body)
+
+    # Freshness hold: draft saved, auto-send with --anyway bypass
+    if rc == 0 and "saved as a draft" in out.lower():
+        rc, out, err = _run(["message", "send", "--send-draft", "--anyway",
+                              "--target", f"dm:{DENTIST_HANDLE}"])
+
     if rc != 0:
+        # SERVER_5XX: server error but message may have arrived — verify
+        if "SERVER_5XX" in err:
+            found_id = _find_submission_msg_id(job_id)
+            if found_id:
+                _notify_channel(job_id, found_id)
+                return found_id
         raise RuntimeError(f"slock DM to DentistWang failed: {err}")
-    return _parse_msg_short_id(out)
+
+    short_id = _parse_msg_short_id(out)
+    _notify_channel(job_id, short_id)
+    return short_id
+
+
+def _notify_channel(job_id: str, dm_short_id: str):
+    """Ping DentistWang in #wt-webapp so they don't miss the DM."""
+    notify_channel = config.NOTIFY_CHANNEL
+    if not notify_channel:
+        return
+    body = f"{DENTIST_HANDLE} 新案例 #{job_id} 已发送至 DM（msg `{dm_short_id}`），请查收处理。"
+    _run(["message", "send", "--target", notify_channel], stdin_text=body)
 
 
 def submit_supplement(job_id: str, dm_short_id: str, supplement_text: str):
@@ -182,7 +226,11 @@ def parse_dm_for_job(raw_output: str, job_id: str):
     # Slock message header pattern — matches both channel (target=) and DM (seq=) formats
     _MSG_HEADER = re.compile(r"^\[(target=|seq=\d)", re.MULTILINE)
 
-    for tag, handler in [(COMPLETED_TAG, _parse_completed), (SUFFICIENCY_TAG, _parse_sufficiency)]:
+    for tag, handler in [
+        (COMPLETED_TAG, _parse_completed),
+        (SUFFICIENCY_TAG, _parse_sufficiency),
+        (RECEIVED_TAG, _parse_received),
+    ]:
         search_start = 0
         while True:
             idx = raw_output.find(tag, search_start)
@@ -216,18 +264,49 @@ def _parse_completed(block: str) -> dict:
         "layer2": layer2,
     }
 
+def _parse_received(block: str) -> dict:
+    path = _field(block, "estimated_path") or "full_pipeline"
+    return {
+        "type": "received",
+        "estimated_path": path,
+        "cowork_id": _field(block, "cowork_id"),
+    }
+
+
 def _parse_sufficiency(block: str) -> dict:
     # YAML body starts on the line after the tag line
     tag_line_end = block.index("\n") + 1
-    yaml_text = block[tag_line_end:tag_line_end + 3000]
-    next_header = re.search(r"^\[target=", yaml_text, re.MULTILINE)
-    if next_header:
-        yaml_text = yaml_text[: next_header.start()]
+    yaml_text = block[tag_line_end:tag_line_end + 6000]
+    # Truncate at first marker that ends the structured YAML section
+    for stopper in (
+        re.compile(r"^\[seq=", re.MULTILINE),
+        re.compile(r"^\[target=", re.MULTILINE),
+        re.compile(r"^---\s*$", re.MULTILINE),
+        re.compile(r"^### Layer [12]", re.MULTILINE | re.IGNORECASE),
+        re.compile(r"^next_round_target_role:", re.MULTILINE),
+        re.compile(r"^note_", re.MULTILINE),
+    ):
+        m = stopper.search(yaml_text)
+        if m:
+            yaml_text = yaml_text[: m.start()]
+    import yaml
     try:
-        import yaml
         data = yaml.safe_load(yaml_text) or {}
     except Exception:
+        # Fallback: extract just the list fields with regex
         data = {}
+        for key in ("cowork_id", "status", "confidence", "emergency_level"):
+            fm = re.search(rf"^{key}:\s*(.+)$", yaml_text, re.MULTILINE)
+            if fm:
+                data[key] = fm.group(1).strip()
+        for key in ("sufficient_fields", "missing_fields", "priority_order"):
+            fm = re.search(rf"^{key}:\s*\n((?:  .+\n?)*)", yaml_text, re.MULTILINE)
+            if fm:
+                try:
+                    data[key] = yaml.safe_load(key + ":\n" + fm.group(1)) or {key: []}
+                    data[key] = data[key].get(key, [])
+                except Exception:
+                    pass
     return {
         "type": "sufficiency",
         "cowork_id":        data.get("cowork_id", ""),

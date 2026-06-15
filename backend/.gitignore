@@ -1,0 +1,6 @@
+uploads/
+data/
+secure/
+__pycache__/
+*.pyc
+.env

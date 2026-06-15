@@ -52,6 +52,8 @@ def init_db():
             ("sufficiency",     "TEXT"),
             ("emergency_level", "TEXT"),
             ("sufficiency_msg", "TEXT"),
+            ("received_at",     "TEXT"),
+            ("estimated_path",  "TEXT"),
         ]:
             try:
                 con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typedef}")
@@ -95,11 +97,32 @@ def list_jobs(submitted_by=None):
     return [dict(r) for r in rows]
 
 
+def set_job_received(job_id: str, estimated_path: str):
+    """Mark job as acked by DentistWang with estimated processing path."""
+    now = datetime.utcnow().isoformat()
+    with _conn() as con:
+        con.execute(
+            "UPDATE jobs SET received_at=?, estimated_path=? WHERE job_id=?",
+            (now, estimated_path, job_id),
+        )
+
+
 def set_dm_msg_id(job_id: str, dm_msg_id: str):
     with _conn() as con:
         con.execute(
             "UPDATE jobs SET dm_msg_id=?, status='processing' WHERE job_id=?",
             (dm_msg_id, job_id),
+        )
+
+
+def set_processing(job_id: str, dm_msg_id: str = None):
+    """Mark job as processing; resets submitted_at so timeout is fresh."""
+    now = datetime.utcnow().isoformat()
+    with _conn() as con:
+        con.execute(
+            """UPDATE jobs SET status='processing', dm_msg_id=?, error_msg=NULL,
+               submitted_at=? WHERE job_id=?""",
+            (dm_msg_id, now, job_id),
         )
 
 
@@ -136,6 +159,11 @@ def update_job_failed(job_id: str, error_msg: str):
         )
 
 
+def delete_job(job_id: str):
+    with _conn() as con:
+        con.execute("DELETE FROM jobs WHERE job_id=?", (job_id,))
+
+
 def requeue_job(job_id: str):
     """After supplement submitted, move back to processing."""
     now = datetime.utcnow().isoformat()
@@ -157,7 +185,7 @@ def timeout_stale_jobs(timeout_minutes: int) -> int:
         result = con.execute(
             """UPDATE jobs SET status='timeout',
                error_msg='AI 超时未响应（超过 {} 分钟），请重新提交或联系管理员。'
-               WHERE status IN ('processing', 'sufficiency')
+               WHERE status = 'processing'
                AND datetime(submitted_at) < datetime('now', '-{} minutes')
                RETURNING job_id""".format(timeout_minutes, timeout_minutes)
         )
