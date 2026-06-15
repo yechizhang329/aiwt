@@ -1,8 +1,9 @@
 """
-Bridge: FastAPI backend → SlimOrchestrator + SlockCLIAdapter.
+Legacy bridge: FastAPI backend -> SlimOrchestrator + SlockCLIAdapter.
 
-Adds DentistWang scripts to sys.path on first import, then exposes
-make_orchestrator() so cases_router can create an Orchestrator per request.
+This file is quarantined for historical reference only. The current runtime
+uses `orchestrator.v2_orchestrator.run_v2`; the old `SlimOrchestrator.py`
+dependency is intentionally not part of this source-of-truth branch.
 """
 import sys
 import config

@@ -44,9 +44,12 @@ These remain governance/admin surfaces, not hot-path clinical diagnosis sources 
 
 ## Deprecated Candidates
 
-- `backend/orchestrator.py`
+- `backend/legacy/orchestrator_bridge.py`
   - Legacy bridge to old `SlimOrchestrator`; current `cases_router.py` imports `orchestrator.v2_orchestrator.run_v2`.
-  - Mark deprecated, then remove after import verification.
+  - Quarantined for historical reference only. It is not importable without the old `SlimOrchestrator.py` dependency, which is intentionally excluded from this source-of-truth branch.
+- `runtime_scripts/legacy/adapters/slock_cli_adapter.py`
+  - Legacy Slock transport adapter for the old `SlimOrchestrator` bridge.
+  - Quarantined with the same missing legacy dependency; not part of current runtime or deployment.
 - `webapp/slock_client.py`, `webapp/poller.py`, legacy jobs rendering in `webapp/pages/2_Case_History.py`
   - Legacy Slock-CLI jobs path. Keep read-only until migration is complete.
 - Old one-off scripts from DentistWang workspace
@@ -65,6 +68,5 @@ These remain governance/admin surfaces, not hot-path clinical diagnosis sources 
 1. Establish this repo as the canonical code source with `backend/`, `webapp/`, `runtime_scripts/`, selected `tools/`, and this inventory.
 2. Verify WebAppDev deployment path and uncommitted webapp changes before merging to `main`.
 3. Add import/startup checks for the staged repo.
-4. Mark deprecated paths in docs before deleting them.
+4. Delete quarantined legacy bridge files after one more runtime import verification cycle.
 5. Move data/eval artifacts into a data registry or object storage with manifests only in git.
-

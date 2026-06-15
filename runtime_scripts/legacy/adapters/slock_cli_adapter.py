@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Slock CLI AgentAdapter — Real transport for SlimOrchestrator → agent dispatch.
+Legacy Slock CLI AgentAdapter for SlimOrchestrator -> agent dispatch.
+
+Quarantined for historical reference only. It depends on the old
+`SlimOrchestrator.py` bridge, which is intentionally excluded from the
+source-of-truth branch because the current backend uses v2 direct orchestration.
 
 Phase 1 Week 2 wrap — M-C2. Per Tier 2 v0.3 + jonathan 21:17 MVP reframe + 太上老君 polling decision (5s fixed).
 
